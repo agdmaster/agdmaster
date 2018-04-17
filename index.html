@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  
+  <title>AGD MASTER</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.5.3/vue.min.js"></script>
+  <script type="text/javascript">
+  $(function() {
+    var GSHEET_JSON_URL = 'https://spreadsheets.google.com/feeds/list/1_fBBiIAFHS6IYstvf1Phk2vdmZpcNB01RTUgz8uyRyQ/1/public/values?alt=json';
+
+    var vueSearch = new Vue({
+      el: '#vueSearch',
+      data: {
+        search: '',
+        links: [],
+        pages: [],
+        pageNumber: 1,
+        results: [],
+        perPage: 10,
+        loading: true,
+        error: null
+      },
+      methods: {
+        changePage: function(number) {
+          location.href = '#vueSearch';
+          this.pageNumber = number;
+          this.updateResults();
+        },
+        updateResults: function() {
+          var self = this;
+
+          // Clear all previous paging data
+          self.pages.splice(0, Infinity);
+
+          // Get an array of search terms as regexes
+          var searchTerms = [];
+          self.search.replace(
+            /([+\-])?(?:"([^"]+)"|(\/((?:[^\/]|\\.)+)\/(i?)|[\S]+))/g,
+            function(m, must, quoted, nonQuoted, rgxText, rgxOpts) {
+			  searchTerms.push(nonQuoted);
+			  /*
+              var realRgxText = rgxText;
+              if (rgxText) {
+                try {
+                  new RegExp(rgxText);
+                }
+                catch (e) {
+                  rgxText = null;
+                }
+              }
+
+              rgxText = rgxText || (
+                ((quoted ? /^\b/.test(quoted) : !realRgxText) ? '\\b' : '')
+                + YourJS.quoteRegExp(quoted || nonQuoted)
+                + ((quoted && /\b$/.test(quoted)) ? '\\b' : '')
+              );
+
+              searchTerms.push({
+                type: realRgxText ? 'regex' : 'string',
+				txt: rgxText,
+                rgx: new RegExp(rgxText, (realRgxText ? rgxOpts : 'i') + 'g'),
+                must: must == '+'
+                  ? true
+                  : must == '-'
+                    ? false
+                    : undefined
+              });
+			  */
+            }
+          );
+
+          // Get the resulting list of links based on the scores.
+          var results = self.links
+            .reduce(function(scores, link, linkIndex) {
+              var score = searchTerms.reduce(function(score, searchTerm) {
+                if (score !== false) {
+                  var matchesTitle = (link.title.match(searchTerm) || '').length;
+                  var matchesQuestion = (link.question.match(searchTerm) || '').length;
+                  var matchesState1 = (link.state1.match(searchTerm) || '').length;
+                  var matchesState2 = (link.state2.match(searchTerm) || '').length;
+                  var matchesState3 = (link.state3.match(searchTerm) || '').length;
+                  var matchesState4 = (link.state4.match(searchTerm) || '').length;
+                  var matchesState5 = (link.state5.match(searchTerm) || '').length;
+                  var matchesAny = !!(matchesTitle || matchesQuestion || matchesState1 || matchesState2 || matchesState3 || matchesState4 || matchesState5);
+                  return searchTerm.must !== !matchesAny
+                    ? searchTerm.must !== false
+                      ? matchesTitle * 8 + matchesQuestion * 8 + matchesState1 * 8 + matchesState2 * 8 + matchesState3 * 8 + matchesState4 * 8 + matchesState5 * 8
+                      : 1
+                    : false;
+                }
+                return score;
+              }, searchTerms.length ? 0 : 1);
+              if (score) {
+                scores.push({ link: link, score: score, index: linkIndex });
+              }
+              return scores;
+            }, [])
+            .sort(function(a, b) { return (b.score - a.score) || (b.index - a.index); })
+            .map(function(score) { return score.link; });
+
+          // Setup the paging data
+          var pageCount = Math.max(1, Math.ceil(results.length / self.perPage));
+          var pageNumber = self.pageNumber = YourJS.clamp(self.pageNumber, 1, pageCount);
+          if (pageNumber > 1) {
+            self.pages.push(self.getPageObject(1, results));
+          }
+          if (pageNumber > 2) {
+            self.pages.push(self.getPageObject(pageNumber - 1, results));
+          }
+          self.pages.push(self.getPageObject(pageNumber, results));
+          if (pageNumber + 1 < pageCount) {
+            self.pages.push(self.getPageObject(pageNumber + 1, results));
+          }
+          if (pageNumber < pageCount) {
+            self.pages.push(self.getPageObject(pageCount, results));
+          }
+
+          // Set self.results to only the results that are shown in the current page.
+          self.results = results.slice((pageNumber - 1) * self.perPage, pageNumber * self.perPage).map(function(link) {
+            link = jQuery.extend({}, link);
+            return {
+              title: self.markTerms(link.title, searchTerms),
+              question: self.markTerms(link.question, searchTerms),
+              state1: self.markTerms(link.state1, searchTerms),
+              state2: self.markTerms(link.state2, searchTerms),
+              state3: self.markTerms(link.state3, searchTerms),
+              state4: self.markTerms(link.state4, searchTerms),
+              state5: self.markTerms(link.state5, searchTerms),
+              category: link.category,
+			  answer: link.answer
+            };
+          });
+        },
+        markTerms: function(strIn, terms) {
+          return terms
+            .reduce(function(str, term) {
+              return (YourJS.matchAll(strIn, term) || []).reduce(function(str, termMatch) {
+                return str.replace(
+                  new RegExp('((?:[\\x01\\x02]*[^\\x01\\x02]){' + termMatch.index + '})((?:[\\x01\\x02]*[^\\x01\\x02]){' + (termMatch[0].length) + '})'),
+                  '$1\x01$2\x02'
+                );
+              }, str);
+            }, strIn)
+            .replace(/\x01/g, '<div class="highlight">').replace(/\x02/g, '</div>');
+        },
+        getPageObject: function(pageNumber, results) {
+          return {
+            text: pageNumber,
+            number: pageNumber,
+            caption: Math.min(results.length, 1 + (pageNumber - 1) * this.perPage) + ' to ' + Math.min(results.length, pageNumber * this.perPage)
+          };
+        }
+      },
+      watch: {
+        search: function(newValue, oldValue) {
+          this.pageNumber = 1;
+          this.updateResults();
+        }
+      },
+      mounted: function () {
+        $.ajax({
+          dataType: "json",
+          url: GSHEET_JSON_URL + '&cache-buster=' + Math.random(),
+          success: function(data) {
+            if (data && data.feed && data.feed.entry && data.feed.entry[0]) {
+              var missing = ['강의제목', '문제', '지문1', '지문2', '지문3', '지문4', '지문5', '정답', '분류'].filter(function(name) {
+                return !data.feed.entry[0]['gsx$' + name];
+              });
+              if (missing[0]) {
+                vueSearch.error = '데이터가 형식에 맞지 않습니다.';
+                return;
+              }
+            }
+            else {
+              vueSearch.error = '데이터 불러오는 중 오류가 발생하였습니다.';
+              return;
+            }
+
+            data.feed.entry.forEach(function(entry) {
+              vueSearch.links.push({
+                title: entry.gsx$강의제목.$t,
+                question: entry.gsx$문제.$t,
+                state1: entry.gsx$지문1.$t,
+                state2: entry.gsx$지문2.$t,
+                state3: entry.gsx$지문3.$t,
+                state4: entry.gsx$지문4.$t,
+                state5: entry.gsx$지문5.$t,
+				answer: entry.gsx$정답.$t,
+                category: entry.gsx$분류.$t
+              });
+            });
+            vueSearch.loading = false;
+            vueSearch.updateResults();
+          },
+          error: function() {
+            vueSearch.error = '데이터를 불러오지 못하였습니다.';
+            vueSearch.loading = false;
+          }
+        });
+
+        // Set focus to search box
+        $('#txtQuery').select();
+      }
+    });
+  });
+
+  /*
+   YourJS - Your Very Own JS Library
+   http://yourjs.com
+
+   Copyright (c) 2015-2017 Christopher West
+   Licensed under the MIT license.
+  */
+  (function(h,c,k){function l(a,b){return function(){return a[b].apply(a,arguments)}}var g=this,m;(function(a,b){m=function(){b||(b=1,g[c]=a);return d}})(g[c]);var n=l([].slice,"call");var d={alias:l,clamp:function(a,b,f){return a<b?b:a>f?f:a},info:function(){return{name:c,version:h,toString:d.toString}},matchAll:function(a,b,f){var c=0,d=[];a.replace(b,function(e){e=n(arguments,0,-1);e.index=e.pop();e.input=a;e.source=b;f&&(e=f(e,++c));e!==k&&d.push(e)});return d.length?d:null},noConflict:m,quoteRegExp:function(a,
+  b){var c=a.replace(/[[\](){}.+*^$|\\?-]/g,"\\$&");return""===b||b?new RegExp(c,!0===b?"":b):c},slice:n,toString:function(){return"YourJS v"+h+" ("+c+")"}};[].forEach(function(a){a()});"undefined"!==typeof exports?("undefined"!==typeof module&&module.exports&&(exports=module.exports=d),(exports[c]=d)[c]=k):g[c]=d})("2.2.0","YourJS");
+  </script>
+
+  <link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css">
+  <style type="text/css">
+  body {
+    padding: 10px;
+  }
+  [v-cloak] { display: none; }
+  div.highlight {
+    display: inline;
+    box-shadow: 0 0 0.5em red;
+    padding: 0.125em;
+    border-radius: 0.5em;
+  }
+  .btn {
+    background-image: linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.2) 49%, rgba(0,0,0,0.15) 51%, rgba(0,0,0,0.05));
+    background-repeat: repeat-x;
+  }
+  p.answer {
+    color: Tomato;
+  }
+  </style>
+</head>
+<body>
+  <h1>AGD Master - 온라인강의</h1>
+  <p class="lead">아래에서 검색되지 않는 문제는 <a href="https://goo.gl/forms/fgagdN9v30Jaf3TF3" target="_blank">이 곳</a>에 추가 부탁드립니다. <b>실시간으로 반영되지는 않습니다.</b></p>
+  <div id="vueSearch" v-cloak>
+    <div class="input-group mb-3">
+      <div class="input-group-prepend">
+        <label class="input-group-text" for="txtQuery">검색어</label>
+      </div>
+      <input type="text" id="txtQuery" v-model="search" class="form-control" placeholder="검색어">
+    </div>
+
+    <div v-for="(link, linkIndex) in results" v-bind:style="linkIndex + 1 < results.length ? 'margin-bottom: 1em;' : ''">
+      <div style="color: #080; font-size: 1.25em;"><span v-html="link.category"></span> - <span v-html="link.title"></span></div>
+      <div style="margin-bottom:10px;margin-top:10px;">Q. <span v-html="link.question"></span></div>
+	  <div>
+		<p v-bind:class="{answer: link.answer == 1}" style="margin-left:15px;margin-bottom:5px;">1. <span v-html="link.state1"></span></p>
+		<p v-bind:class="{answer: link.answer == 2}" style="margin-left:15px;margin-bottom:5px;">2. <span v-html="link.state2"></span></p>
+		<p v-bind:class="{answer: link.answer == 3}" style="margin-left:15px;margin-bottom:5px;">3. <span v-html="link.state3"></span></p>
+		<p v-bind:class="{answer: link.answer == 4}" style="margin-left:15px;margin-bottom:5px;">4. <span v-html="link.state4"></span></p>
+		<p v-bind:class="{answer: link.answer == 5}" style="margin-left:15px;margin-bottom:5px;" v-if="link.state5.length > 0">5. <span v-html="link.state5"></span></p>
+	  </div>
+    </div>
+
+    <div v-if="error" class="alert alert-danger text-center lead" v-html="error.replace(/`([^`]+)`/g, '<code>$1</code>')">{{error}}</div>
+    <div v-else-if="loading" class="text-center lead">... 검색중 ...</div>
+    <div v-else-if="!results.length" class="text-center lead">
+      해당 검색어에 대한 결과가 없습니다. <code>{{ search }}</code>.
+    </div>
+
+    <div class="text-center">
+      <div class="d-inline-block">
+        <div class="input-group mb-3" v-if="pages.length">
+            <div class="input-group-prepend">
+              <span class="input-group-text" for="txtQuery">Pages</span>
+            </div>
+          <div class="input-group-append">
+            <button v-for="page in pages" v-bind:class="'btn btn-outline-secondary' + (page.number == pageNumber ? ' active' : '')" type="button" style="float: initial;" v-on:click="changePage(page.number)" v-bind:title="page.caption">{{ page.text }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
