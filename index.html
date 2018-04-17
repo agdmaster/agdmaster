@@ -17,12 +17,14 @@
     var vueSearch = new Vue({
       el: '#vueSearch',
       data: {
+        totalNumber: 0,
         search: '',
         links: [],
         pages: [],
         pageNumber: 1,
         results: [],
         perPage: 10,
+        perPageInPagination: 10,
         loading: true,
         error: null
       },
@@ -43,35 +45,7 @@
           self.search.replace(
             /([+\-])?(?:"([^"]+)"|(\/((?:[^\/]|\\.)+)\/(i?)|[\S]+))/g,
             function(m, must, quoted, nonQuoted, rgxText, rgxOpts) {
-			  searchTerms.push(nonQuoted);
-			  /*
-              var realRgxText = rgxText;
-              if (rgxText) {
-                try {
-                  new RegExp(rgxText);
-                }
-                catch (e) {
-                  rgxText = null;
-                }
-              }
-
-              rgxText = rgxText || (
-                ((quoted ? /^\b/.test(quoted) : !realRgxText) ? '\\b' : '')
-                + YourJS.quoteRegExp(quoted || nonQuoted)
-                + ((quoted && /\b$/.test(quoted)) ? '\\b' : '')
-              );
-
-              searchTerms.push({
-                type: realRgxText ? 'regex' : 'string',
-				txt: rgxText,
-                rgx: new RegExp(rgxText, (realRgxText ? rgxOpts : 'i') + 'g'),
-                must: must == '+'
-                  ? true
-                  : must == '-'
-                    ? false
-                    : undefined
-              });
-			  */
+			  searchTerms.push(new RegExp(nonQuoted, "i"));
             }
           );
 
@@ -90,7 +64,7 @@
                   var matchesAny = !!(matchesTitle || matchesQuestion || matchesState1 || matchesState2 || matchesState3 || matchesState4 || matchesState5);
                   return searchTerm.must !== !matchesAny
                     ? searchTerm.must !== false
-                      ? matchesTitle * 8 + matchesQuestion * 8 + matchesState1 * 8 + matchesState2 * 8 + matchesState3 * 8 + matchesState4 * 8 + matchesState5 * 8
+                      ? matchesTitle * 8 + matchesQuestion * 4 + matchesState1 * 2 + matchesState2 * 2 + matchesState3 * 2 + matchesState4 * 2 + matchesState5 * 2
                       : 1
                     : false;
                 }
@@ -107,18 +81,37 @@
           // Setup the paging data
           var pageCount = Math.max(1, Math.ceil(results.length / self.perPage));
           var pageNumber = self.pageNumber = YourJS.clamp(self.pageNumber, 1, pageCount);
-          if (pageNumber > 1) {
-            self.pages.push(self.getPageObject(1, results));
-          }
-          if (pageNumber > 2) {
-            self.pages.push(self.getPageObject(pageNumber - 1, results));
-          }
-          self.pages.push(self.getPageObject(pageNumber, results));
-          if (pageNumber + 1 < pageCount) {
-            self.pages.push(self.getPageObject(pageNumber + 1, results));
-          }
-          if (pageNumber < pageCount) {
-            self.pages.push(self.getPageObject(pageCount, results));
+          if (pageCount < self.perPageInPagination) {
+            for(i = 1; i <= pageCount; i++) {
+              self.pages.push(self.getPageObject(i, results));
+            }
+          } else {
+            var prevCount = Math.floor((self.perPageInPagination - 1) / 2);
+            var nextCount = Math.ceil((self.perPageInPagination - 1) / 2);
+
+	    if (pageNumber - prevCount < 1) {
+              prevCount = pageNumber - 1;
+              nextCount = self.perPageInPagination - prevCount - 1;
+            }
+	    if (nextCount + pageNumber > pageCount) {
+              nextCount = pageCount - pageNumber;
+            }
+
+            if (pageNumber > prevCount + 1) {
+              self.pages.push(self.getPageObject(1, results));
+            }
+            for(i = pageNumber - prevCount; i < pageNumber; i++) {
+              self.pages.push(self.getPageObject(i, results));
+            }
+
+            self.pages.push(self.getPageObject(pageNumber, results));
+
+            for(i = pageNumber + 1; i <= pageNumber + nextCount; i++) {
+              self.pages.push(self.getPageObject(i, results));
+            }
+            if (pageNumber + nextCount < pageCount) {
+              self.pages.push(self.getPageObject(pageCount, results));
+            }
           }
 
           // Set self.results to only the results that are shown in the current page.
@@ -191,11 +184,12 @@
                 state3: entry.gsx$지문3.$t,
                 state4: entry.gsx$지문4.$t,
                 state5: entry.gsx$지문5.$t,
-				answer: entry.gsx$정답.$t,
+		answer: entry.gsx$정답.$t,
                 category: entry.gsx$분류.$t
               });
             });
             vueSearch.loading = false;
+            vueSearch.totalNumber = vueSearch.links.length;
             vueSearch.updateResults();
           },
           error: function() {
@@ -246,6 +240,7 @@
   <h1>AGD Master - 온라인강의</h1>
   <p class="lead">아래에서 검색되지 않는 문제는 <a href="https://goo.gl/forms/fgagdN9v30Jaf3TF3" target="_blank">이 곳</a>에 추가 부탁드립니다. <b>실시간으로 반영되지는 않습니다.</b></p>
   <div id="vueSearch" v-cloak>
+  <p class="lead" style="color: #080; font-size: 2em;">총 {{ totalNumber }}문항 수집됨</p>
     <div class="input-group mb-3">
       <div class="input-group-prepend">
         <label class="input-group-text" for="txtQuery">검색어</label>
