@@ -234,6 +234,10 @@
   p.answer {
     color: Tomato;
   }
+  pre.question {
+    display: inline;
+    white-space: pre-wrap;
+  }
   </style>
 </head>
 <body>
@@ -250,7 +254,7 @@
 
     <div v-for="(link, linkIndex) in results" v-bind:style="linkIndex + 1 < results.length ? 'margin-bottom: 1em;' : ''">
       <div style="color: #080; font-size: 1.25em;"><span v-html="link.category"></span> - <span v-html="link.title"></span></div>
-      <div style="margin-bottom:10px;margin-top:10px;">Q. <span v-html="link.question"></span></div>
+      <div style="margin-bottom:10px;margin-top:10px;">Q. <pre class="question" v-html="link.question"></pre></div>
 	  <div>
 		<p v-bind:class="{answer: link.answer == 1}" style="margin-left:15px;margin-bottom:5px;">1. <span v-html="link.state1"></span></p>
 		<p v-bind:class="{answer: link.answer == 2}" style="margin-left:15px;margin-bottom:5px;">2. <span v-html="link.state2"></span></p>
